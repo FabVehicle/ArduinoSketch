@@ -19,10 +19,10 @@ int iServo;        // サーボーモータのパラメータ(角度)
 
 // モータ用パラメータ定数
 const int incS =  12;     // 操作一回当りのサーボモータパラメータ変化量
-const int minM = -100;   // DCモータパラメータの最小値
+const int minM = -150;   // DCモータパラメータの最小値
 const int maxM = 150;    // DCモータパラメータの最大値
-const int minS =  78;    // サーボモータパラメータの最小値
-const int maxS = 102;    // サーボモータパラメータの最大値
+const int minS =  70;    // サーボモータパラメータの最小値
+const int maxS = 110;    // サーボモータパラメータの最大値
 
 unsigned int stcnt;      // 直進時間のカウント
 bool lavoidf, ravoidf;
@@ -42,6 +42,8 @@ const String voiceBack     = "hokennkinnta'ka/na'ruyannke/-'.";
 
 //#define _FAST_CODE_
 
+const int centor_servo = 92;
+const int delta_servo = 12;
 //---------------------------------------------------
 // セットアップ関数
 //---------------------------------------------------
@@ -60,7 +62,7 @@ void setup()
   myservo.attach(servoPin);
   
   iMotor = maxM;    // DCモータの初期値
-  iServo = 90;      // サーボの初期値
+  iServo = centor_servo;      // サーボの初期値
   
   stcnt = 0;
   lavoidf = ravoidf = false;
@@ -202,12 +204,12 @@ int DistanceSensor()
   int dataR = analogRead(analogpin0);  //read data from analog0 pin
   bool chkR = chkThresholdDistance(dataR);
     
-  int iservo = 90;
+  int iservo = centor_servo;
   
   if ( chkL ) {
-    iservo = 102 ;
+    iservo = centor_servo + delta_servo ;
   } else if ( chkR ) {
-    iservo = 78 ;
+    iservo = centor_servo - delta_servo ;
   } 
   
   return iservo;
@@ -224,17 +226,17 @@ int TouchSensor( int iIn3Pin, int iIn4Pin )
   int iservo = iServo;
   
   if ( lban == LOW && rban == LOW ) {
-    imotor = -100;
+    imotor = -150;
     dtime = 5000;
-    iservo = 90;
+    iservo = centor_servo;
   } else if ( lban == LOW ) {
-    imotor = -100;
+    imotor = -150;
     dtime = 5000;
-    iServo = 102;
+    iServo = centor_servo + delta_servo;
   } else if ( rban == LOW ) {
-    imotor = -100;
+    imotor = -150;
     dtime = 5000;
-    iservo = 78;
+    iservo = centor_servo - delta_servo;
   }
   
   iMotor = imotor;
@@ -255,14 +257,14 @@ void loop()
   int dtime = TouchSensor( tSwitch1, tSwitch2 );
   
   if ( dtime != 5000 ) { // タッチセンサーOFF
-    if ( iServo == 102  ) {  // 右距離センサ反応
+    if ( iServo == centor_servo+delta_servo  ) {  // 右距離センサ反応
       stcnt = 0;
       if ( lavoidf == false ) {
         vvoice(2);
         lavoidf = true; ravoidf = false;
         SERIAL_PRINTLN("Right!!");
       }
-    } else if ( iServo == 78 ) {  // 左距離センサ反応
+    } else if ( iServo == centor_servo-delta_servo ) {  // 左距離センサ反応
       stcnt = 0;
       if ( ravoidf == false ) {  
         vvoice(3);
