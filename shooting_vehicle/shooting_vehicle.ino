@@ -1,3 +1,4 @@
+#include <SoftwareSerial.h>
 #include <Servo.h>
 
 Servo srvWheel;
@@ -30,9 +31,13 @@ struct pmBoundMotor {
   int maxS;  // サーボモータパラメータの最大値
 };
 
-const struct pinMotor pinWheel = {10,7,8,9};  // 車輪駆動モータピン番号
-const struct pinMotor pinGun   = { 6,3,4,5};  // 砲台駆動モータピン番号
+const struct pinMotor pinWheel = {10,7,8,9};// 車輪駆動モータピン番号
+const struct pinMotor pinGun   = { 6,3,4,5};// 砲台駆動モータピン番号
+const int pinPhotoRef = 1;					// フォトリフレクタピン番号(アナログ)
+const int pinSerialRx = 11;					// ソフトシリアルRxピン番号
+const int pinSerialTx = 12;					// ソフトシリアルTxピン番号
 
+SoftwareSerial swSerial(pinSerialRx,pinSerialTx);
 struct pmMotor pmWheel;
 struct pmMotor pmGun;
 
@@ -57,6 +62,7 @@ const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 void setup()
 {
   Serial.begin(9600);
+  swSerial.begin(2400);
 
   pinMode(pinWheel.servoPin ,OUTPUT);
   pinMode(pinWheel.dcPin1 ,OUTPUT);
@@ -128,12 +134,73 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
   }
 }
 #endif
+
+//---------------------------------------------------
+// PS3コントローラー信号の受信
+//---------------------------------------------------
+bool ReadCmd(int* cmd)
+{
+  int bf_cmd[8];
+  while( !swSerial.available() );
+  
+  bool readf = false;
+  
+  do {
+    bf_cmd[0] = swSerial.read();
+  } while( bf_cmd[0] != 0x80 );
+    
+    unsigned int sum = 0;
+    for( int i=1; i<7; i++ ) {
+      bf_cmd[i] = swSerial.read();
+      SERIAL_PRINTLN(bf_cmd[i]);
+      sum += bf_cmd[i];
+    }
+    bf_cmd[7] = swSerial.read();
+    sum &= 0x7F;
+    SERIAL_PRINT("[7] ");
+    SERIAL_PRINT(cmd[7]);
+    SERIAL_PRINT(" ");
+    SERIAL_PRINTLN(sum);
+    if ( bf_cmd[7] == sum ) {
+      readf = true;
+      for ( int i=0;i<8;i++ ) {
+        cmd[i] = bf_cmd[i];
+      }
+    }
+  return readf;
+}
 //---------------------------------------------------
 // PS3コントローラー信号のデコード
 //---------------------------------------------------
-void decodeCmd(String cmdStr, struct pmMotor *pmWheel, struct pmMotor *pmGun)
+void decodeCmd(
+   int *cmdStream, struct pmMotor *pmWheel, struct pmMotor *pmGun, 
+   const struct pmBoundMotor *pmBoundWheel, const struct pmBoundMotor *pmBoundGun)
 {
-// 現状未実装
+  if ( cmdStream[1] == 0 ) {
+    switch(cmdStream[2]) {
+      case 1: {	// ↑ボタン
+        pmGun->iServo += pmBoundGun->incS;
+        pmGun->iServo = min(pmBoundGun->maxS,pmGun->iServo);
+        break;
+      }
+      case 2: {	// ↓ボタン
+        pmGun->iServo -= pmBoundGun->incS;
+        pmGun->iServo = max(pmBoundGun->maxS,pmGun->iServo);
+        break;
+      }
+      case 8: {	// △ボタン
+        pmGun->iMotor = pmBoundGun->maxM;
+        break;
+      }
+      case 0: {	// アナログスティック
+        pmWheel->iMotor = map(cmdStream[4],pmBoundWheel->minM,pmBoundWheel->maxM,0,127);
+        pmWheel->iServo = map(cmdStream[5],pmBoundWheel->minS,pmBoundWheel->maxS,0,127);
+        break;
+      }
+      default: {// その他
+      }
+    } // end of switch
+  } // end of if
 }
 
 //---------------------------------------------------
@@ -141,9 +208,12 @@ void decodeCmd(String cmdStr, struct pmMotor *pmWheel, struct pmMotor *pmGun)
 //---------------------------------------------------
 void loop()
 {
-  String cmdStr;
+  int cmdStream[8];
 
-  decodeCmd(cmdStr,&pmWheel,&pmGun); // PS3コントローラーから信号取得
+  if ( ReadCmd(cmdStream) ) {				// PS3コントローラーから信号受信
+    // PS3コントローラーから信号デコード
+    decodeCmd(cmdStream,&pmWheel,&pmGun,&pmBoundWheel,&pmBoundGun);
+  }
 
   // 後輪制御
   pmWheel.iMotor = constrain(pmWheel.iMotor,pmBoundWheel.minM,pmBoundWheel.maxM);
@@ -168,7 +238,7 @@ void loop()
   SERIAL_PRINT(", ");
   SERIAL_PRINTLN(pmGun.iServo);
 
- delay(10);
+ delay(35);
 
 }
 
