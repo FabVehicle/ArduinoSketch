@@ -1,3 +1,4 @@
+#include <MsTimer2.h>
 #include <SoftwareSerial.h>
 #include <Servo.h>
 
@@ -36,6 +37,7 @@ const struct pinMotor pinGun   = { 6,3,4,5};// 砲台駆動モータピン番号
 const int pinPhotoRef = 1;					// フォトリフレクタピン番号(アナログ)
 const int pinSerialRx = 11;					// ソフトシリアルRxピン番号
 const int pinSerialTx = 12;					// ソフトシリアルTxピン番号
+const int pinPhoton   = 1;
 
 SoftwareSerial swSerial(pinSerialRx,pinSerialTx);
 struct pmMotor pmWheel;
@@ -47,6 +49,9 @@ const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 // 砲台用境界パラメータ変数
 const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 
+// フォトリフレクタ閾値(まだ適当)
+const int disTh = 100;
+
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
 #define SERIAL_PRINTLN(...) Serial.println(__VA_ARGS__)
@@ -55,6 +60,24 @@ const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 #define SERIAL_PRINTLN(...) 
 #endif
 
+//---------------------------------------------------
+// フォトリフレクタデータ取得関数
+//---------------------------------------------------
+bool chkRotate(int val)
+{
+  bool chkf = false;
+  if ( val > disTh ) {
+    chkf = true;
+  }
+  return chkf;
+}
+void stopGun()
+{
+  int val = analogRead(pinPhoton);
+  if ( chkRotate(val) ) {
+    pmGun.iMotor = 0;
+  }
+}
 //---------------------------------------------------
 // セットアップ関数
 //---------------------------------------------------
@@ -86,7 +109,12 @@ void setup()
   digitalWrite(pinGun.dcPin1, LOW);
   digitalWrite(pinGun.dcPin2, LOW);
   analogWrite(pinGun.pmPin,pmGun.iMotor);
-  
+
+  // フォトリフレクタデータ取得関数を
+  // タイマー割込み起動するように登録
+  MsTimer2::set(10,stopGun);
+  MsTimer2::start();
+
   SERIAL_PRINTLN("done setup");
 }
 
@@ -152,7 +180,7 @@ bool ReadCmd(int* cmd)
     unsigned int sum = 0;
     for( int i=1; i<7; i++ ) {
       bf_cmd[i] = swSerial.read();
-      SERIAL_PRINTLN(bf_cmd[i]);
+//      SERIAL_PRINTLN(bf_cmd[i]);
       sum += bf_cmd[i];
     }
     bf_cmd[7] = swSerial.read();
