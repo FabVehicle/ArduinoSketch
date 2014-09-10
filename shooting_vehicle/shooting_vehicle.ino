@@ -47,7 +47,6 @@ const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 // 砲台用境界パラメータ変数
 const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 
-
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
 #define SERIAL_PRINTLN(...) Serial.println(__VA_ARGS__)
@@ -87,7 +86,8 @@ void setup()
   digitalWrite(pinGun.dcPin1, LOW);
   digitalWrite(pinGun.dcPin2, LOW);
   analogWrite(pinGun.pmPin,pmGun.iMotor);
-
+  
+  SERIAL_PRINTLN("done setup");
 }
 
 //---------------------------------------------------
@@ -157,10 +157,12 @@ bool ReadCmd(int* cmd)
     }
     bf_cmd[7] = swSerial.read();
     sum &= 0x7F;
+    /*
     SERIAL_PRINT("[7] ");
     SERIAL_PRINT(cmd[7]);
     SERIAL_PRINT(" ");
     SERIAL_PRINTLN(sum);
+    */
     if ( bf_cmd[7] == sum ) {
       readf = true;
       for ( int i=0;i<8;i++ ) {
@@ -185,16 +187,24 @@ void decodeCmd(
       }
       case 2: {	// ↓ボタン
         pmGun->iServo -= pmBoundGun->incS;
-        pmGun->iServo = max(pmBoundGun->maxS,pmGun->iServo);
+        pmGun->iServo = max(pmBoundGun->minS,pmGun->iServo);
         break;
       }
-      case 8: {	// △ボタン
+      case 16: {// △ボタン
         pmGun->iMotor = pmBoundGun->maxM;
         break;
       }
       case 0: {	// アナログスティック
-        pmWheel->iMotor = map(cmdStream[4],pmBoundWheel->minM,pmBoundWheel->maxM,0,127);
-        pmWheel->iServo = map(cmdStream[5],pmBoundWheel->minS,pmBoundWheel->maxS,0,127);
+        SERIAL_PRINTLN(cmdStream[4]);
+        /*
+        if ( cmdStream[4] > 63 ) {
+          pmWheel->iMotor = map(cmdStream[4],64,127,80,pmBoundWheel->maxM);
+        } else {
+          pmWheel->iMotor = map(cmdStream[4],0,63,pmBoundWheel->minM,-80);
+        }
+        */
+        pmWheel->iMotor = map(cmdStream[4],0,127,pmBoundWheel->minM,pmBoundWheel->maxM);
+        pmWheel->iServo = map(cmdStream[5],0,127,pmBoundWheel->minS,pmBoundWheel->maxS);
         break;
       }
       default: {// その他
@@ -231,9 +241,11 @@ void loop()
   pmGun.iServo = constrain(pmGun.iServo,pmBoundGun.minS,pmBoundGun.maxS);
   srvGun.write(pmGun.iServo);
 
+  SERIAL_PRINT("Wheel::");
   SERIAL_PRINT(pmWheel.iMotor);
   SERIAL_PRINT(", ");
-  SERIAL_PRINTLN(pmWheel.iServo);
+  SERIAL_PRINT(pmWheel.iServo);
+  SERIAL_PRINT(" Gun::");
   SERIAL_PRINT(pmGun.iMotor);
   SERIAL_PRINT(", ");
   SERIAL_PRINTLN(pmGun.iServo);
