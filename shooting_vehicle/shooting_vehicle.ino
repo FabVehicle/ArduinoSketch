@@ -39,7 +39,10 @@ const int pinSerialRx = 11;					// ソフトシリアルRxピン番号
 const int pinSerialTx = 12;					// ソフトシリアルTxピン番号
 const int pinPhoton   = 1;
 
+#if 0
 SoftwareSerial swSerial(pinSerialRx,pinSerialTx);
+#endif
+
 struct pmMotor pmWheel;
 struct pmMotor pmGun;
 
@@ -83,9 +86,8 @@ void stopGun()
 //---------------------------------------------------
 void setup()
 {
-  Serial.begin(9600);
-  swSerial.begin(2400);
-
+  Serial.begin(2400);
+  
   pinMode(pinWheel.servoPin ,OUTPUT);
   pinMode(pinWheel.dcPin1 ,OUTPUT);
   pinMode(pinWheel.dcPin2 ,OUTPUT);
@@ -169,21 +171,21 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
 bool ReadCmd(int* cmd)
 {
   int bf_cmd[8];
-  while( !swSerial.available() );
+  while( !Serial.available() );
   
   bool readf = false;
   
   do {
-    bf_cmd[0] = swSerial.read();
+    bf_cmd[0] = Serial.read();
   } while( bf_cmd[0] != 0x80 );
     
     unsigned int sum = 0;
     for( int i=1; i<7; i++ ) {
-      bf_cmd[i] = swSerial.read();
+      bf_cmd[i] = Serial.read();
 //      SERIAL_PRINTLN(bf_cmd[i]);
       sum += bf_cmd[i];
     }
-    bf_cmd[7] = swSerial.read();
+    bf_cmd[7] = Serial.read();
     sum &= 0x7F;
     /*
     SERIAL_PRINT("[7] ");
