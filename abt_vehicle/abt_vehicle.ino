@@ -3,19 +3,10 @@ Servo myservo;
 
 #define _DEBUG_
 
-#define KUROKAWA
-// ピン番号
-#ifdef KUROKAWA
 const int servoPin = 10;
 const int dcPin1 = 5;
 const int dcPin2 = 4;
 const int pmPin = 6;
-#else
-const int servoPin = 6;
-const int dcPin1 = 11;
-const int dcPin2 = 10;
-const int pmPin = 5;
-#endif
 
 // モーター用パラメータ変数
 int iMotor;        // DCモータ駆動用のパラメータ
@@ -37,6 +28,14 @@ const int minM = -150;   // DCモータパラメータの最小値
 const int maxM = 150;    // DCモータパラメータの最大値
 const int minS =  78;    // サーボモータパラメータの最小値
 const int maxS = 102;    // サーボモータパラメータの最大値
+
+#ifdef _DEBUG_
+#define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
+#define SERIAL_PRINTLN(...) Serial.println(__VA_ARGS__)
+#else
+#define SERIAL_PRINT(...) 
+#define SERIAL_PRINTLN(...) 
+#endif
 
 //---------------------------------------------------
 // セットアップ関数
@@ -201,13 +200,11 @@ void loop()
   if ( ! readCmdString(g_szReadBuffer, READBUFFERSIZE, g_iIndexChar, szLineString,  READBUFFERSIZE) ) {
     return ;
   }
-#ifdef _DEBUG_
-
+  
   for( int i=0; i<READBUFFERSIZE; i++ ) {
-    Serial.print(szLineString[i]);
+    SERIAL_PRINT(szLineString[i]);
   }
-  Serial.println();
-#endif
+  SERIAL_PRINTLN();
 
   if ( ! analizeCommadLine(szLineString, iMotor, iServo) )  {
     return;
@@ -219,11 +216,9 @@ void loop()
   iServo = constrain(iServo,minS,maxS);
   myservo.write(iServo);
 
- #ifdef _DEBUG_
-  Serial.print(iMotor);
-  Serial.print(", ");
-  Serial.println(iServo);
-#endif
+  SERIAL_PRINT(iMotor);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINTLN(iServo);
 
  delay(100);
 }
