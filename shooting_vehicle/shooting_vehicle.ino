@@ -32,16 +32,9 @@ struct pmBoundMotor {
   int maxS;  // サーボモータパラメータの最大値
 };
 
-const struct pinMotor pinWheel = {10,7,8,9};// 車輪駆動モータピン番号
-const struct pinMotor pinGun   = { 6,3,4,5};// 砲台駆動モータピン番号
+const struct pinMotor pinWheel = {10,7,8,6};// 車輪駆動モータピン番号
+const struct pinMotor pinGun   = { 9,3,4,5};// 砲台駆動モータピン番号
 const int pinPhotoRef = 1;					// フォトリフレクタピン番号(アナログ)
-const int pinSerialRx = 11;					// ソフトシリアルRxピン番号
-const int pinSerialTx = 12;					// ソフトシリアルTxピン番号
-const int pinPhoton   = 1;
-
-#if 0
-SoftwareSerial swSerial(pinSerialRx,pinSerialTx);
-#endif
 
 struct pmMotor pmWheel;
 struct pmMotor pmGun;
@@ -53,7 +46,7 @@ const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 
 // フォトリフレクタ閾値(まだ適当)
-const int disTh = 100;
+const int disTh = 1023;
 
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
@@ -76,7 +69,7 @@ bool chkRotate(int val)
 }
 void stopGun()
 {
-  int val = analogRead(pinPhoton);
+  int val = analogRead(pinPhotoRef);
   if ( chkRotate(val) ) {
     pmGun.iMotor = 0;
   }
@@ -280,7 +273,7 @@ void loop()
   SERIAL_PRINT(", ");
   SERIAL_PRINTLN(pmGun.iServo);
 
- delay(35);
+  delay(35);
 
 }
 
