@@ -69,7 +69,7 @@ void readPhotoRef()
   bool flag = false;
   
   if ( cur != flagPhotoRef ) {
-    if ( cur == HIGH ) {
+    if ( cur == LOW ) {
       flag = true;
     } 
     flagPhotoRef = cur;
