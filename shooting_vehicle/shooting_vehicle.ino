@@ -223,6 +223,10 @@ void decodeCmd(
         pmGun->iMotor = pmBoundGun->maxM;
         break;
       }
+      case 32: {// ×ボタン
+        pmGun->iMotor = 0;
+        break;
+      }
       case 0: {	// アナログスティック
         SERIAL_PRINTLN(cmdStream[4]);
         /*
