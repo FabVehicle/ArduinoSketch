@@ -34,7 +34,7 @@ struct pmBoundMotor {
 
 const struct pinMotor pinWheel = {10,7,8,6};// 車輪駆動モータピン番号
 const struct pinMotor pinGun   = { 9,3,4,5};// 砲台駆動モータピン番号
-const int pinPhotoRef = 1;					// フォトリフレクタピン番号(アナログ)
+const int pinPhotoRef = 11;		    // フォトリフレクタピン番号
 
 struct pmMotor pmWheel;
 struct pmMotor pmGun;
@@ -45,8 +45,11 @@ const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 // 砲台用境界パラメータ変数
 const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 
-// フォトリフレクタ閾値(まだ適当)
-const int disTh = 1023;
+// フォトリフレクタの状態フラグ
+volatile int flagPhotoRef;
+
+// 
+volatile bool GunOff;
 
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
@@ -57,22 +60,22 @@ const int disTh = 1023;
 #endif
 
 //---------------------------------------------------
-// フォトリフレクタデータ取得関数
+// 砲台用DCモータ停止チェック関数
+// (フォトリフレクタ信号の立下りエッジ取得)
 //---------------------------------------------------
-bool chkRotate(int val)
+void readPhotoRef()
 {
-  bool chkf = false;
-  if ( val > disTh ) {
-    chkf = true;
+  int cur = digitalRead(pinPhotoRef);
+  bool flag = false;
+  
+  if ( cur != flagPhotoRef ) {
+    if ( cur == HIGH ) {
+      flag = true;
+    } 
+    flagPhotoRef = cur;
   }
-  return chkf;
-}
-void stopGun()
-{
-  int val = analogRead(pinPhotoRef);
-  if ( chkRotate(val) ) {
-    pmGun.iMotor = 0;
-  }
+  
+  GunOff = flag;
 }
 //---------------------------------------------------
 // セットアップ関数
@@ -104,10 +107,13 @@ void setup()
   digitalWrite(pinGun.dcPin1, LOW);
   digitalWrite(pinGun.dcPin2, LOW);
   analogWrite(pinGun.pmPin,pmGun.iMotor);
-
+  
+  pinMode(pinPhotoRef ,INPUT_PULLUP);
+  flagPhotoRef = digitalRead(pinPhotoRef);
+  GunOff = false;
   // フォトリフレクタデータ取得関数を
   // タイマー割込み起動するように登録
-  MsTimer2::set(10,stopGun);
+  MsTimer2::set(100,readPhotoRef);
   MsTimer2::start();
 
   SERIAL_PRINTLN("done setup");
@@ -257,6 +263,9 @@ void loop()
   srvWheel.write(pmWheel.iServo);
 
   // 打ち出し制御
+  if ( GunOff ) {
+    pmGun.iMotor = 0;
+  }
   pmGun.iMotor = constrain(pmGun.iMotor,pmBoundGun.minM,pmBoundGun.maxM);
   MotorDrive(pinGun.dcPin1,pinGun.dcPin2,pinGun.pmPin,pmGun.iMotor);
   
