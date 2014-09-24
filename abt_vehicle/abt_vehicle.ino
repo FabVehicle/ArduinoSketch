@@ -140,7 +140,7 @@ boolean analizeCommadLine(char* szLineString, int& iMotor, int& iServo)
       }
     } 
     if ( strlen(pszSteering) != 0 ) {  // ステアリング値が含まれている場合
-      iServo = 90 - ( incS * atoi(pszSteering) );
+      iServo = 90 + ( incS * atoi(pszSteering) );
     }
   }
   
