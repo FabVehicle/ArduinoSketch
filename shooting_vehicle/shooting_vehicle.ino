@@ -5,6 +5,8 @@
 Servo srvWheel;
 Servo srvGun;
 
+#define TIMEOUT_TH 50
+
 #define _DEBUG_
 
 // モータピン定義用構造体
@@ -46,7 +48,7 @@ const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
 
 // フォトリフレクタの状態フラグ
-volatile int flagPhotoRef;
+int flagPhotoRef;
 
 // 
 volatile bool GunOff;
@@ -66,16 +68,18 @@ volatile bool GunOff;
 void readPhotoRef()
 {
   int cur = digitalRead(pinPhotoRef);
-  bool flag = false;
   
   if ( cur != flagPhotoRef ) {
-    if ( cur == LOW ) {
-      flag = true;
+    if ( cur == HIGH ) {
+      GunOff = true;
+      digitalWrite(3, LOW);
+      digitalWrite(4, LOW);
+      analogWrite(5,0);
     } 
     flagPhotoRef = cur;
   }
   
-  GunOff = flag;
+//  GunOff = flag;
 }
 //---------------------------------------------------
 // セットアップ関数
@@ -113,7 +117,7 @@ void setup()
   GunOff = false;
   // フォトリフレクタデータ取得関数を
   // タイマー割込み起動するように登録
-  MsTimer2::set(100,readPhotoRef);
+  MsTimer2::set(50,readPhotoRef);
   MsTimer2::start();
 
   SERIAL_PRINTLN("done setup");
@@ -167,9 +171,53 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
 //---------------------------------------------------
 // PS3コントローラー信号の受信
 //---------------------------------------------------
+#ifdef _NEW_
 bool ReadCmd(int* cmd)
 {
   int bf_cmd[8];
+  bool timeoutf = false;
+  
+  long preMillis = millis();
+  while( !Serial.available() ) {
+    if ( (millis()-preMillis) > TIMEOUT_TH ) {
+     timeoutf = true;
+     break;
+    }
+  }
+  
+  bool readf = false;
+  if ( timeoutf ) return readf;
+  
+  do {
+    bf_cmd[0] = Serial.read();
+  } while( bf_cmd[0] != 0x80 );
+    
+  unsigned int sum = 0;
+  for( int i=1; i<7; i++ ) {
+    bf_cmd[i] = Serial.read();
+    sum += bf_cmd[i];
+  }
+  bf_cmd[7] = Serial.read();
+  sum &= 0x7F;
+  /*
+  SERIAL_PRINT("[7] ");
+  SERIAL_PRINT(cmd[7]);
+  SERIAL_PRINT(" ");
+  SERIAL_PRINTLN(sum);
+  */
+  if ( bf_cmd[7] == sum ) {
+    readf = true;
+    for ( int i=0;i<8;i++ ) {
+      cmd[i] = bf_cmd[i];
+    }
+  }
+  return readf;
+}
+#else
+bool ReadCmd(int* cmd)
+{
+  int bf_cmd[8];
+
   while( !Serial.available() );
   
   bool readf = false;
@@ -178,28 +226,28 @@ bool ReadCmd(int* cmd)
     bf_cmd[0] = Serial.read();
   } while( bf_cmd[0] != 0x80 );
     
-    unsigned int sum = 0;
-    for( int i=1; i<7; i++ ) {
-      bf_cmd[i] = Serial.read();
-//      SERIAL_PRINTLN(bf_cmd[i]);
-      sum += bf_cmd[i];
+  unsigned int sum = 0;
+  for( int i=1; i<7; i++ ) {
+    bf_cmd[i] = Serial.read();
+    sum += bf_cmd[i];
+  }
+  bf_cmd[7] = Serial.read();
+  sum &= 0x7F;
+  /*
+  SERIAL_PRINT("[7] ");
+  SERIAL_PRINT(cmd[7]);
+  SERIAL_PRINT(" ");
+  SERIAL_PRINTLN(sum);
+  */
+  if ( bf_cmd[7] == sum ) {
+    readf = true;
+    for ( int i=0;i<8;i++ ) {
+      cmd[i] = bf_cmd[i];
     }
-    bf_cmd[7] = Serial.read();
-    sum &= 0x7F;
-    /*
-    SERIAL_PRINT("[7] ");
-    SERIAL_PRINT(cmd[7]);
-    SERIAL_PRINT(" ");
-    SERIAL_PRINTLN(sum);
-    */
-    if ( bf_cmd[7] == sum ) {
-      readf = true;
-      for ( int i=0;i<8;i++ ) {
-        cmd[i] = bf_cmd[i];
-      }
-    }
+  }
   return readf;
 }
+#endif
 //---------------------------------------------------
 // PS3コントローラー信号のデコード
 //---------------------------------------------------
@@ -257,7 +305,7 @@ void loop()
     // PS3コントローラーから信号デコード
     decodeCmd(cmdStream,&pmWheel,&pmGun,&pmBoundWheel,&pmBoundGun);
   }
-
+  
   // 後輪制御
   pmWheel.iMotor = constrain(pmWheel.iMotor,pmBoundWheel.minM,pmBoundWheel.maxM);
   MotorDrive(pinWheel.dcPin1,pinWheel.dcPin2,pinWheel.pmPin,pmWheel.iMotor);
@@ -269,6 +317,7 @@ void loop()
   // 打ち出し制御
   if ( GunOff ) {
     pmGun.iMotor = 0;
+    GunOff = false;
   }
   pmGun.iMotor = constrain(pmGun.iMotor,pmBoundGun.minM,pmBoundGun.maxM);
   MotorDrive(pinGun.dcPin1,pinGun.dcPin2,pinGun.pmPin,pmGun.iMotor);
@@ -276,6 +325,12 @@ void loop()
   // 砲台制御
   pmGun.iServo = constrain(pmGun.iServo,pmBoundGun.minS,pmBoundGun.maxS);
   srvGun.write(pmGun.iServo);
+
+  SERIAL_PRINT("flag = ");
+  SERIAL_PRINT(flagPhotoRef);
+  SERIAL_PRINT("  GunOff = ");
+  SERIAL_PRINT(GunOff);
+  SERIAL_PRINT("   ");
 
   SERIAL_PRINT("Wheel::");
   SERIAL_PRINT(pmWheel.iMotor);
@@ -286,7 +341,7 @@ void loop()
   SERIAL_PRINT(", ");
   SERIAL_PRINTLN(pmGun.iServo);
 
+  
   delay(35);
 
 }
-
