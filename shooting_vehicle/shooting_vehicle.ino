@@ -5,7 +5,9 @@
 Servo srvWheel;
 Servo srvGun;
 
+#ifdef _NEW_
 #define TIMEOUT_TH 50
+#endif
 
 #define _DEBUG_
 
@@ -117,7 +119,7 @@ void setup()
   GunOff = false;
   // フォトリフレクタデータ取得関数を
   // タイマー割込み起動するように登録
-  MsTimer2::set(50,readPhotoRef);
+  MsTimer2::set(25,readPhotoRef);
   MsTimer2::start();
 
   SERIAL_PRINTLN("done setup");
@@ -171,7 +173,7 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
 //---------------------------------------------------
 // PS3コントローラー信号の受信
 //---------------------------------------------------
-#ifdef _NEW_
+#ifdef _NEW_ // Not Used
 bool ReadCmd(int* cmd)
 {
   int bf_cmd[8];
