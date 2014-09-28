@@ -1,7 +1,7 @@
 #include <Servo.h>
 Servo myservo;
 
-#define _DEBUG_
+//#define _DEBUG_
 
 const int servoPin = 10;
 const int dcPin1 = 5;
@@ -26,8 +26,9 @@ const int incM = 10;     // DCモータパラメータ変化量
 const int incS =  2;     // サーボモータパラメータ変化量
 const int minM = -150;   // DCモータパラメータの最小値
 const int maxM = 150;    // DCモータパラメータの最大値
-const int minS =  78;    // サーボモータパラメータの最小値
-const int maxS = 102;    // サーボモータパラメータの最大値
+const int ctrM = 88;     //
+const int minS = ctrM-12;// サーボモータパラメータの最小値
+const int maxS = ctrM+12;// サーボモータパラメータの最大値
 
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
@@ -50,12 +51,13 @@ void setup()
   myservo.attach(servoPin);
 
   iMotor = 0;    // DCモータの初期値
-  iServo = 90;   // サーボの初期値
+  iServo = ctrM; // サーボの初期値
 
   digitalWrite(dcPin1, LOW);
   digitalWrite(dcPin2, LOW);
   analogWrite(pmPin,iMotor);
 
+  SERIAL_PRINTLN("setup");
 }
 
 //---------------------------------------------------
@@ -127,10 +129,10 @@ boolean analizeCommadLine(char* szLineString, int& iMotor, int& iServo)
   
   if ( ! strcmp(pszCommand,"s") ) {
     iMotor = 0;
-    iServo = 90;
+    iServo = ctrM;
   } else {
     if ( strlen(pszThrottle) != 0 ) {  // スロット値が含まれている場合
-      int nThrottle = atoi(pszThrottle);
+      int nThrottle = -atoi(pszThrottle);
       if ( nThrottle == 0 ) {
         iMotor = 0;
       } else if ( nThrottle > 0 ) {
@@ -140,7 +142,7 @@ boolean analizeCommadLine(char* szLineString, int& iMotor, int& iServo)
       }
     } 
     if ( strlen(pszSteering) != 0 ) {  // ステアリング値が含まれている場合
-      iServo = 90 + ( incS * atoi(pszSteering) );
+      iServo = ctrM + ( incS * atoi(pszSteering) );
     }
   }
   
