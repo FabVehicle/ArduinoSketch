@@ -277,6 +277,10 @@ void decodeCmd(
         pmGun->iMotor = 0;
         break;
       }
+      case 12: { // Selectボタン
+        pmWheel->iMotor = 0;
+        break;
+      }
       case 0: {	// アナログスティック
         SERIAL_PRINTLN(cmdStream[4]);
         /*
