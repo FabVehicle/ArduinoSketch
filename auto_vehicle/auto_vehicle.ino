@@ -32,6 +32,9 @@ const String voiceLeft     = "shu'tte/magaru.";
 const String voiceStraight = "buu'a-tte/iku'-.";
 const String voiceBack     = "hokennkinnta'ka/na'ruyannke/-'.";
 
+const int ivalTime = 10;
+const int backTime = 5000;
+
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
 #define SERIAL_PRINTLN(...) Serial.println(__VA_ARGS__)
@@ -73,10 +76,13 @@ void setup()
 //---------------------------------------------------
 // 音声合成にる声出し
 //---------------------------------------------------
-void vvoice( int n )
+bool vvoice( int n )
 {
   String strMsg;
-  
+  static int latest = 0;
+
+  if ( latest == n ) return false;
+
   switch ( n ) {
     case 1: {
       strMsg = voiceStraight;
@@ -103,6 +109,9 @@ void vvoice( int n )
   while( AquesTalk_IsBusy() ) ;
   AquesTalk_Synthe(strMsg);
 
+  latest = n;
+  
+  return true;
 }
   
 //---------------------------------------------------
@@ -196,19 +205,19 @@ bool chkThresholdDistance( int dat )
 //---------------------------------------------------
 // 測距センサ関数
 //---------------------------------------------------
-int DistanceSensor()
+int DistanceSensor(bool* chkR, bool* chkL)
 {  
-  int dataL = analogRead(analogpin1);  //read data from analog1 pin
-  bool chkL = chkThresholdDistance(dataL);
+  int dataR = analogRead(analogpin1);  //read data from analog1 pin
+  *chkR = chkThresholdDistance(dataR);
   
-  int dataR = analogRead(analogpin0);  //read data from analog0 pin
-  bool chkR = chkThresholdDistance(dataR);
+  int dataL = analogRead(analogpin0);  //read data from analog0 pin
+  *chkL = chkThresholdDistance(dataL);
     
   int iservo = centor_servo;
   
-  if ( chkL ) {
+  if ( *chkL ) {
     iservo = centor_servo + delta_servo ;
-  } else if ( chkR ) {
+  } else if ( *chkR ) {
     iservo = centor_servo - delta_servo ;
   } 
   
@@ -217,32 +226,33 @@ int DistanceSensor()
 //---------------------------------------------------
 // タッチセンサ関数(グローバル変数に直接代入)
 //---------------------------------------------------
-int TouchSensor( int iIn3Pin, int iIn4Pin )
+bool TouchSensor( int iIn3Pin, int iIn4Pin )
 {
-  int dtime = 10;
   int lban = digitalRead(iIn3Pin);
   int rban = digitalRead(iIn4Pin);
   int imotor = maxM;
   int iservo = iServo;
-  
+
+  bool retf = false;
+
   if ( lban == LOW && rban == LOW ) {
     imotor = -150;
-    dtime = 5000;
+    retf = true;
     iservo = centor_servo;
   } else if ( lban == LOW ) {
     imotor = -150;
-    dtime = 5000;
+    retf = true;
     iServo = centor_servo + delta_servo;
   } else if ( rban == LOW ) {
     imotor = -150;
-    dtime = 5000;
+    retf = true;
     iservo = centor_servo - delta_servo;
   }
   
   iMotor = imotor;
   iServo = iservo;
   
-  return dtime;
+  return retf;
 }
 
 //---------------------------------------------------
@@ -251,28 +261,25 @@ int TouchSensor( int iIn3Pin, int iIn4Pin )
 void loop()
 { 
   // 測距センサー情報からサーボ角度を計算
-  iServo = DistanceSensor();
+  bool disRf, disLf;
+  iServo = DistanceSensor(&disRf, &disLf);
   
   // タッチセンサーからの情報で上書き
-  int dtime = TouchSensor( tSwitch1, tSwitch2 );
-  
-  if ( dtime != 5000 ) { // タッチセンサーOFF
-    if ( iServo == centor_servo+delta_servo  ) {  // 右距離センサ反応
+  bool touchf = TouchSensor( tSwitch1, tSwitch2 );
+
+  bool retf;
+  int dtime;
+
+  if ( ! touchf ) { // タッチセンサーOFF
+    if ( disRf ) {  // 右距離センサ反応
       stcnt = 0;
-      if ( lavoidf == false ) {
-        vvoice(2);
-        lavoidf = true; ravoidf = false;
-        SERIAL_PRINTLN("Right!!");
-      }
-    } else if ( iServo == centor_servo-delta_servo ) {  // 左距離センサ反応
+      retf = vvoice(2);
+      if ( retf ) SERIAL_PRINTLN("Right!!");
+    } else if ( disLf ) {  // 左距離センサ反応
       stcnt = 0;
-      if ( ravoidf == false ) {  
-        vvoice(3);
-        ravoidf  = true; lavoidf = false;
-        SERIAL_PRINTLN("Left!!");
-      }
+      retf = vvoice(3);
+      if ( retf ) SERIAL_PRINTLN("Left!!");
     } else {                  // 直進
-      lavoidf = ravoidf = false;
       SERIAL_PRINTLN("Straight!!");
       if ( stcnt == 100 ) {   // 直進が一定時間経った場合
         vvoice(1);
@@ -282,10 +289,12 @@ void loop()
         stcnt ++;
       }
     }
+    dtime = ivalTime;
   } else {
     stcnt = 0;
     SERIAL_PRINTLN("Others!!");
     vvoice(4);
+    dtime = backTime;
   }
 
   iMotor = constrain(iMotor,minM,maxM);
