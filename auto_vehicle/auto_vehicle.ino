@@ -1,5 +1,6 @@
 #include <Servo.h>
 #include <Wire.h>    // I2C通信用ライブラリ
+#include "enum_kind.h"
 
 Servo myservo;
 
@@ -27,13 +28,21 @@ const int maxS = 110;    // サーボモータパラメータの最大値
 unsigned int stcnt;      // 直進時間のカウント
 bool lavoidf, ravoidf;
 
-const String voiceRight    = "ga'tte/magaru.";
-const String voiceLeft     = "shu'tte/magaru.";
+// 距離センサーのしきい値
+const int NearTh = 15;
+const int FarTh  = 30;
+
+const String voiceNearRight    = "ga'tte/magaru.";
+const String voiceNearLeft     = "shu'tte/magaru.";
+const String voiceFarRight     = "so'tto/magaru.";
+const String voiceFarLeft      = "hayameni/magaru.";
 const String voiceStraight = "buu'a-tte/iku'-.";
 const String voiceBack     = "hokennkinnta'ka/na'ruyannke/-'.";
 
 const int ivalTime = 10;
 const int backTime = 5000;
+
+#define _DEBUG_
 
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
@@ -76,31 +85,43 @@ void setup()
 //---------------------------------------------------
 // 音声合成にる声出し
 //---------------------------------------------------
-bool vvoice( int n )
+bool vvoice( VoiceKind n )
 {
   String strMsg;
-  static int latest = 0;
-
+  static VoiceKind latest = vcSilence;
+  
+  SERIAL_PRINT(latest);
+  SERIAL_PRINT(",");
+  SERIAL_PRINTLN(n);
+  
   if ( latest == n ) return false;
 
   switch ( n ) {
-    case 1: {
+    case vcStraight: {
       strMsg = voiceStraight;
       break;
     }
-    case 2: {
-      strMsg = voiceRight;
+    case vcNearRight: {
+      strMsg = voiceNearRight;
       break;
     }
-    case 3: {
-      strMsg = voiceLeft;
+    case vcNearLeft: {
+      strMsg = voiceNearLeft;
       break;
     }
-    case 4: {
+    case vcFarRight: {
+      strMsg = voiceFarRight;
+      break;
+    }
+    case vcFarLeft: {
+      strMsg = voiceFarLeft;
+      break;
+    }
+    case vcBack: {
       strMsg = voiceBack;
       break;
     }
-    case 0: {
+    case vcSilence: {
       strMsg = "";
       break;
     }
@@ -138,7 +159,6 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iMotor )
 //---------------------------------------------------
 // 測距センサー距離換算関数
 //---------------------------------------------------
-#ifndef _FAST_CODE_
 float voltage2distance(float dVolt) {
   
   float dDist;
@@ -177,49 +197,50 @@ float voltage2distance(float dVolt) {
   }
   return dDist;
 }
-#endif
 //---------------------------------------------------
 // 距離の閾値判定関数
 //---------------------------------------------------
-#ifndef _FAST_CODE_
-bool chkThresholdDistance( int dat )
+DisKind chkThresholdDistance( int dat )
 {
-  bool chkf = false;
+  DisKind chkf = disUnknown;
   
   float dVoltage = (float)dat / 1024.0 * 5.0;
-  if ( 15 > voltage2distance(dVoltage) ) {
-    chkf = true;
-  }
+  
+  int dist = (int)voltage2distance(dVoltage);
+  
+  if ( NearTh > dist ) {
+    chkf = disNear;
+  } else if ( FarTh > dist ) {
+    chkf = disFar;
+  } 
+  
   return chkf;
 }
-#else
-bool chkThresholdDistance( int dat )
-{
-  bool chkf = false;
-  if ( dat > 1.623327 && dat < 3.131931 ) {
-    chkf = true;
-  }
-  return chkf;
-}
-#endif
 //---------------------------------------------------
 // 測距センサ関数
 //---------------------------------------------------
-int DistanceSensor(bool* chkR, bool* chkL)
+int DistanceSensor(DisKind* dkR, DisKind* dkL)
 {  
   int dataR = analogRead(analogpin1);  //read data from analog1 pin
-  *chkR = chkThresholdDistance(dataR);
+  *dkR = chkThresholdDistance(dataR);
   
   int dataL = analogRead(analogpin0);  //read data from analog0 pin
-  *chkL = chkThresholdDistance(dataL);
-    
+  *dkL = chkThresholdDistance(dataL);
+  
   int iservo = centor_servo;
   
-  if ( *chkL ) {
-    iservo = centor_servo + delta_servo ;
-  } else if ( *chkR ) {
-    iservo = centor_servo - delta_servo ;
-  } 
+  int dl = 0;
+  if ( *dkL == disNear ) {
+    dl = delta_servo ;
+  } else if ( *dkR == disNear ) {
+    dl = - delta_servo ;
+  } else if ( *dkL == disFar ) {
+    dl = delta_servo/2;
+  } else if ( *dkR == disFar ) {
+    dl = (-delta_servo)/2;
+  }
+    
+  iservo += dl;
   
   return iservo;
 }
@@ -261,8 +282,8 @@ bool TouchSensor( int iIn3Pin, int iIn4Pin )
 void loop()
 { 
   // 測距センサー情報からサーボ角度を計算
-  bool disRf, disLf;
-  iServo = DistanceSensor(&disRf, &disLf);
+  DisKind diskindR, diskindL;
+  iServo = DistanceSensor(&diskindR, &diskindL);
   
   // タッチセンサーからの情報で上書き
   bool touchf = TouchSensor( tSwitch1, tSwitch2 );
@@ -271,21 +292,35 @@ void loop()
   int dtime;
 
   if ( ! touchf ) { // タッチセンサーOFF
-    if ( disRf ) {  // 右距離センサ反応
+    if ( diskindR == disNear ) {
+      // 右距離センサ反応
       stcnt = 0;
-      retf = vvoice(2);
-      if ( retf ) SERIAL_PRINTLN("Right!!");
-    } else if ( disLf ) {  // 左距離センサ反応
+      retf = vvoice(vcNearRight);
+      if ( retf ) SERIAL_PRINTLN("Near Right!!");
+    } else if ( diskindL == disNear ) {
+      // 左距離センサ反応
       stcnt = 0;
-      retf = vvoice(3);
-      if ( retf ) SERIAL_PRINTLN("Left!!");
-    } else {                  // 直進
+      retf = vvoice(vcNearLeft);
+      if ( retf ) SERIAL_PRINTLN("Near Left!!");
+    } else if ( diskindR == disFar ) {
+      // 右距離センサ反応
+      stcnt = 0;
+      retf = vvoice(vcFarRight);
+      if ( retf ) SERIAL_PRINTLN("Far Right!!");
+    } else if ( diskindL == disFar ) {
+      // 左距離センサ反応
+      stcnt = 0;
+      retf = vvoice(vcFarLeft);
+      if ( retf ) SERIAL_PRINTLN("Far Left!!");
+    } else {
+      // 直進
       SERIAL_PRINTLN("Straight!!");
-      if ( stcnt == 100 ) {   // 直進が一定時間経った場合
-        vvoice(1);
+      if ( stcnt == 100 ) {
+	// 直進が一定時間経った場合
+        vvoice(vcStraight);
         stcnt = 0;
       } else {
-        vvoice(0);
+        vvoice(vcSilence);
         stcnt ++;
       }
     }
@@ -293,7 +328,7 @@ void loop()
   } else {
     stcnt = 0;
     SERIAL_PRINTLN("Others!!");
-    vvoice(4);
+    vvoice(vcBack);
     dtime = backTime;
   }
 
@@ -340,11 +375,11 @@ void AquesTalk_Synthe(String &strMsg)
 }
 
 // 音声合成開始    引数に音声記号列を指定
-// 最後に"¥r"を送信
+// 最後に"\r"を送信
 void AquesTalk_Synthe(const char *msg)
 {
     AquesTalk_Cmd(msg);
-    AquesTalk_Cmd("¥r");
+    AquesTalk_Cmd("\r");
 }
 
 // LSI にコマンド送信
@@ -358,7 +393,7 @@ void AquesTalk_Cmd(const char *msg)
         Wire.beginTransmission(I2C_ADDR_AQUESTALK);
         // Wireの制約で、一度に送れるのは32byteまで
         for(int i=0;i<32;i++){
-#ifdef _DEBUG_
+#ifdef _AQ_DEBUG_
             Serial.println(*p);
 #endif
             Wire.write(*p++);
