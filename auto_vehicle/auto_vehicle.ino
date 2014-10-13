@@ -34,8 +34,8 @@ const int FarTh  = 30;
 
 const String voiceNearRight    = "ga'tte/magaru.";
 const String voiceNearLeft     = "shu'tte/magaru.";
-const String voiceFarRight     = "so'tto/magaru.";
-const String voiceFarLeft      = "hayameni/magaru.";
+const String voiceFarRight     = "jama'yade/-";
+const String voiceFarLeft      = "dokannka'i.";
 const String voiceStraight = "buu'a-tte/iku'-.";
 const String voiceBack     = "hokennkinnta'ka/na'ruyannke/-'.";
 
