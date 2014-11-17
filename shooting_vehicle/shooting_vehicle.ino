@@ -47,7 +47,7 @@ struct pmMotor pmGun;
 const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 
 // 砲台用境界パラメータ変数
-const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,78,102};
+const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,90,115};
 
 // フォトリフレクタの状態フラグ
 int flagPhotoRef;
