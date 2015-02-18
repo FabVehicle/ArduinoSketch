@@ -1,12 +1,15 @@
 #include <Servo.h>
 Servo myservo;
 
-//#define _DEBUG_
+#define _DEBUG_
 
 const int servoPin = 10;
 const int dcPin1 = 5;
 const int dcPin2 = 4;
 const int pmPin = 6;
+const int rheadlightPin = 12;
+const int lheadlightPin = 13;
+
 
 // モーター用パラメータ変数
 int iMotor;        // DCモータ駆動用のパラメータ
@@ -19,6 +22,9 @@ int iServo;        // サーボーモータのパラメータ(角度)
 #define READBUFFERSIZE (32)
 char g_szReadBuffer[READBUFFERSIZE] = "";
 int  g_iIndexChar = 0;
+
+// ヘッドライト変数
+int LightStat;
 
 // モータ用パラメータ定数
 const int ofsM = 100;    // DCモータオフセットパラメータ値(スロット値＝１の時の値)
@@ -47,6 +53,8 @@ void setup()
   pinMode(servoPin ,OUTPUT);
   pinMode(dcPin1 ,OUTPUT);
   pinMode(dcPin2 ,OUTPUT);
+  pinMode(rheadlightPin, OUTPUT);
+  pinMode(lheadlightPin, OUTPUT);
 
   myservo.attach(servoPin);
 
@@ -56,6 +64,10 @@ void setup()
   digitalWrite(dcPin1, LOW);
   digitalWrite(dcPin2, LOW);
   analogWrite(pmPin,iMotor);
+
+  LightStat = LOW;
+  digitalWrite(rheadlightPin,LightStat);
+  digitalWrite(lheadlightPin,LightStat);
 
   SERIAL_PRINTLN("setup");
 }
@@ -95,9 +107,10 @@ boolean readCmdString( char* szReadBuffer, const int ciReadBuffer, int& riIndexC
 }
 //---------------------------------------------------
 // コマンド解析関数
-// $CMD,コマンド(c|s),スロット値,ステアリング値;
-// コマンド：c か s の文字
-//           s ⇒　ストップ，c ⇒　値設定
+// $CMD,コマンド(c|s|l),スロット値,ステアリング値;
+// コマンド：c か s か l の文字
+//           s ⇒  ストップ，c ⇒  モータ値設定，
+//           l ⇒ ヘッドライト状態変更
 // スロット値：-5～5までの整数
 // ステアリング値：-5～5までの整数
 //---------------------------------------------------
@@ -130,7 +143,7 @@ boolean analizeCommadLine(char* szLineString, int& iMotor, int& iServo)
   if ( ! strcmp(pszCommand,"s") ) {
     iMotor = 0;
     iServo = ctrM;
-  } else {
+  } else if ( ! strcmp(pszCommand,"c" ) ){
     if ( strlen(pszThrottle) != 0 ) {  // スロット値が含まれている場合
       int nThrottle = -atoi(pszThrottle);
       if ( nThrottle == 0 ) {
@@ -144,6 +157,11 @@ boolean analizeCommadLine(char* szLineString, int& iMotor, int& iServo)
     if ( strlen(pszSteering) != 0 ) {  // ステアリング値が含まれている場合
       iServo = ctrM + ( incS * atoi(pszSteering) );
     }
+  } else if ( ! strcmp(pszCommand,"l" ) ) {
+      if ( LightStat == LOW ) 
+        LightStat = HIGH;
+      else 
+        LightStat = LOW;
   }
   
   return true;
@@ -217,6 +235,9 @@ void loop()
   
   iServo = constrain(iServo,minS,maxS);
   myservo.write(iServo);
+
+  digitalWrite(rheadlightPin,LightStat);
+  digitalWrite(lheadlightPin,LightStat);
 
   SERIAL_PRINT(iMotor);
   SERIAL_PRINT(", ");
