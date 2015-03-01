@@ -47,7 +47,7 @@ struct pmMotor pmGun;
 const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 
 // 砲台用境界パラメータ変数
-const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,100,90,115};
+const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,150,90,115};
 
 // フォトリフレクタの状態フラグ
 int flagPhotoRef;
@@ -235,12 +235,26 @@ bool ReadCmd(int* cmd)
   }
   bf_cmd[7] = Serial.read();
   sum &= 0x7F;
-  /*
-  SERIAL_PRINT("[7] ");
-  SERIAL_PRINT(cmd[7]);
-  SERIAL_PRINT(" ");
+
+  SERIAL_PRINT("COMMAND: ");
+  SERIAL_PRINT(bf_cmd[0]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[1]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[2]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[3]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[4]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[5]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[6]);
+  SERIAL_PRINT(", ");
+  SERIAL_PRINT(bf_cmd[7]);
+  SERIAL_PRINT(", SUM: ");
   SERIAL_PRINTLN(sum);
-  */
+
   if ( bf_cmd[7] == sum ) {
     readf = true;
     for ( int i=0;i<8;i++ ) {
@@ -282,7 +296,6 @@ void decodeCmd(
         break;
       }
       case 0: {	// アナログスティック
-        SERIAL_PRINTLN(cmdStream[4]);
         /*
         if ( cmdStream[4] > 63 ) {
           pmWheel->iMotor = map(cmdStream[4],64,127,80,pmBoundWheel->maxM);
@@ -332,7 +345,7 @@ void loop()
   pmGun.iServo = constrain(pmGun.iServo,pmBoundGun.minS,pmBoundGun.maxS);
   srvGun.write(pmGun.iServo);
 
-  SERIAL_PRINT("flag = ");
+  SERIAL_PRINT("                                                      flag = ");
   SERIAL_PRINT(flagPhotoRef);
   SERIAL_PRINT("  GunOff = ");
   SERIAL_PRINT(GunOff);
