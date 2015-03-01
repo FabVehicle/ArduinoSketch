@@ -169,7 +169,35 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
   }
 }
 #endif
+//---------------------------------------------------
+// DCモータ値の計算
+//---------------------------------------------------
+int calcDCMotorValue( int val, bool up_f, const struct pmBoundMotor* bound) 
+{
+  int dc_val = val;
 
+  if ( val == 0 ) {
+    if ( up_f ) {
+      dc_val = bound->ofsM;
+    } else {
+      dc_val = -bound->ofsM;
+    }
+  } else {
+    if ( up_f ) {
+      dc_val += bound->incM;
+    } else {
+      dc_val -= bound->incM;
+    }
+
+    if ( abs(dc_val) < bound->ofsM ) {
+      dc_val = 0;
+    } else {
+      dc_val = constrain(dc_val,bound->minM,bound->maxM);
+    }
+  }
+
+  return dc_val;
+}
 //---------------------------------------------------
 // PS3コントローラー信号の受信
 //---------------------------------------------------
@@ -236,6 +264,7 @@ bool ReadCmd(int* cmd)
   bf_cmd[7] = Serial.read();
   sum &= 0x7F;
 
+/*
   SERIAL_PRINT("COMMAND: ");
   SERIAL_PRINT(bf_cmd[0]);
   SERIAL_PRINT(", ");
@@ -254,7 +283,7 @@ bool ReadCmd(int* cmd)
   SERIAL_PRINT(bf_cmd[7]);
   SERIAL_PRINT(", SUM: ");
   SERIAL_PRINTLN(sum);
-
+*/
   if ( bf_cmd[7] == sum ) {
     readf = true;
     for ( int i=0;i<8;i++ ) {
@@ -271,16 +300,32 @@ void decodeCmd(
    int *cmdStream, struct pmMotor *pmWheel, struct pmMotor *pmGun, 
    const struct pmBoundMotor *pmBoundWheel, const struct pmBoundMotor *pmBoundGun)
 {
-  if ( cmdStream[1] == 0 ) {
+  if ( cmdStream[1] ) {
+    if ( cmdStream[1] == 8 ) {  // R1ボタン
+      pmGun->iServo += pmBoundGun->incS;
+      pmGun->iServo = min(pmBoundGun->maxS,pmGun->iServo);
+    } else if ( cmdStream[1] == 16 ) { // R2ボタン
+      pmGun->iServo -= pmBoundGun->incS;
+      pmGun->iServo = max(pmBoundGun->minS,pmGun->iServo);
+    }
+  } else {
     switch(cmdStream[2]) {
       case 1: {	// ↑ボタン
-        pmGun->iServo += pmBoundGun->incS;
-        pmGun->iServo = min(pmBoundGun->maxS,pmGun->iServo);
+        pmWheel->iMotor = calcDCMotorValue(pmWheel->iMotor,false,pmBoundWheel);
         break;
       }
       case 2: {	// ↓ボタン
-        pmGun->iServo -= pmBoundGun->incS;
-        pmGun->iServo = max(pmBoundGun->minS,pmGun->iServo);
+        pmWheel->iMotor = calcDCMotorValue(pmWheel->iMotor,true,pmBoundWheel);
+        break;
+      }
+      case 4: {	// →ボタン
+        pmWheel->iServo += pmBoundWheel->incS;
+        pmWheel->iServo = min(pmBoundWheel->maxS,pmWheel->iServo);
+        break;
+      }
+      case 8: {	// ←ボタン
+        pmWheel->iServo -= pmBoundWheel->incS;
+        pmWheel->iServo = max(pmBoundWheel->minS,pmWheel->iServo);
         break;
       }
       case 16: {// △ボタン
@@ -288,7 +333,8 @@ void decodeCmd(
         break;
       }
       case 32: {// ×ボタン
-        pmGun->iMotor = 0;
+        pmGun->iMotor   = 0;
+        pmWheel->iMotor = 0;
         break;
       }
       case 12: { // Selectボタン
