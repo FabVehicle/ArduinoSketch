@@ -1,15 +1,12 @@
 #include <MsTimer2.h>
 #include <SoftwareSerial.h>
 #include <Servo.h>
+#include "enum_stat.h"
 
 Servo srvWheel;
 Servo srvGun;
 
-#ifdef _NEW_
-#define TIMEOUT_TH 50
-#endif
-
-#define _DEBUG_
+// #define _DEBUG_
 
 // モータピン定義用構造体
 struct pinMotor {
@@ -47,13 +44,15 @@ struct pmMotor pmGun;
 const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
 
 // 砲台用境界パラメータ変数
-const struct pmBoundMotor pmBoundGun   = {100, 0,1,   0,150,90,115};
+const struct pmBoundMotor pmBoundGun   = {100, 0,2,   0,150,92,110};
 
 // フォトリフレクタの状態フラグ
 int flagPhotoRef;
 
 // フォトリフレクタの立上がりエッジ検出フラグ
 volatile bool GunOff;
+
+KeyStat Stat;
 
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
@@ -100,11 +99,11 @@ void setup()
   pinMode(pinGun.dcPin2 ,OUTPUT);
   srvGun.attach(pinGun.servoPin);
 
-  pmWheel.iMotor = 0;    // DCモータの初期値
-  pmWheel.iServo = 90;   // サーボの初期値
+  pmWheel.iMotor = 0;   		// DCモータの初期値
+  pmWheel.iServo = 90;   		// サーボの初期値
 
-  pmGun.iMotor = 0;    // DCモータの初期値
-  pmGun.iServo = 90;   // サーボの初期値
+  pmGun.iMotor = 0;    			// DCモータの初期値
+  pmGun.iServo = pmBoundGun.minS;	// サーボの初期値
 
   digitalWrite(pinWheel.dcPin1, LOW);
   digitalWrite(pinWheel.dcPin2, LOW);
@@ -122,6 +121,7 @@ void setup()
   MsTimer2::set(25,readPhotoRef);
   MsTimer2::start();
 
+  Stat = ksNeutral;
   SERIAL_PRINTLN("done setup");
 }
 
@@ -170,80 +170,9 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
 }
 #endif
 //---------------------------------------------------
-// DCモータ値の計算
-//---------------------------------------------------
-int calcDCMotorValue( int val, bool up_f, const struct pmBoundMotor* bound) 
-{
-  int dc_val = val;
-
-  if ( val == 0 ) {
-    if ( up_f ) {
-      dc_val = bound->ofsM;
-    } else {
-      dc_val = -bound->ofsM;
-    }
-  } else {
-    if ( up_f ) {
-      dc_val += bound->incM;
-    } else {
-      dc_val -= bound->incM;
-    }
-
-    if ( abs(dc_val) < bound->ofsM ) {
-      dc_val = 0;
-    } else {
-      dc_val = constrain(dc_val,bound->minM,bound->maxM);
-    }
-  }
-
-  return dc_val;
-}
-//---------------------------------------------------
 // PS3コントローラー信号の受信
 //---------------------------------------------------
-#ifdef _NEW_ // Not Used
-bool ReadCmd(int* cmd)
-{
-  int bf_cmd[8];
-  bool timeoutf = false;
-  
-  long preMillis = millis();
-  while( !Serial.available() ) {
-    if ( (millis()-preMillis) > TIMEOUT_TH ) {
-     timeoutf = true;
-     break;
-    }
-  }
-  
-  bool readf = false;
-  if ( timeoutf ) return readf;
-  
-  do {
-    bf_cmd[0] = Serial.read();
-  } while( bf_cmd[0] != 0x80 );
-    
-  unsigned int sum = 0;
-  for( int i=1; i<7; i++ ) {
-    bf_cmd[i] = Serial.read();
-    sum += bf_cmd[i];
-  }
-  bf_cmd[7] = Serial.read();
-  sum &= 0x7F;
-  /*
-  SERIAL_PRINT("[7] ");
-  SERIAL_PRINT(cmd[7]);
-  SERIAL_PRINT(" ");
-  SERIAL_PRINTLN(sum);
-  */
-  if ( bf_cmd[7] == sum ) {
-    readf = true;
-    for ( int i=0;i<8;i++ ) {
-      cmd[i] = bf_cmd[i];
-    }
-  }
-  return readf;
-}
-#else
+
 bool ReadCmd(int* cmd)
 {
   int bf_cmd[8];
@@ -257,33 +186,31 @@ bool ReadCmd(int* cmd)
   } while( bf_cmd[0] != 0x80 );
     
   unsigned int sum = 0;
-  for( int i=1; i<7; i++ ) {
-    bf_cmd[i] = Serial.read();
-    sum += bf_cmd[i];
-  }
-  bf_cmd[7] = Serial.read();
+  unsigned int cnt = 1;
+  do {
+    bf_cmd[cnt] = Serial.peek();
+    if ( bf_cmd[cnt] == 0x80 ) {
+      // 電文のスタートコードの場合は処理を終了(エラー状態)
+      break;
+    }
+
+    bf_cmd[cnt] = Serial.read();
+    if ( bf_cmd[cnt] == -1 ) 
+      continue;
+
+    if ( cnt < 7 )
+      sum += bf_cmd[cnt];
+    cnt ++;
+  } while ( cnt < 8 );
+
   sum &= 0x7F;
 
-/*
-  SERIAL_PRINT("COMMAND: ");
-  SERIAL_PRINT(bf_cmd[0]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[1]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[2]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[3]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[4]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[5]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[6]);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(bf_cmd[7]);
-  SERIAL_PRINT(", SUM: ");
-  SERIAL_PRINTLN(sum);
-*/
+  char str_buf[256];
+  sprintf(str_buf,"CMD: %x, %x, %x, %x, %x, %x, %x, %x, SUM: %x  (cnt=%d)",
+                   bf_cmd[0],bf_cmd[1],bf_cmd[2],bf_cmd[3],
+                   bf_cmd[4],bf_cmd[5],bf_cmd[6],bf_cmd[7], sum, cnt);
+  SERIAL_PRINTLN(str_buf);
+
   if ( bf_cmd[7] == sum ) {
     readf = true;
     for ( int i=0;i<8;i++ ) {
@@ -292,7 +219,6 @@ bool ReadCmd(int* cmd)
   }
   return readf;
 }
-#endif
 //---------------------------------------------------
 // PS3コントローラー信号のデコード
 //---------------------------------------------------
@@ -300,63 +226,65 @@ void decodeCmd(
    int *cmdStream, struct pmMotor *pmWheel, struct pmMotor *pmGun, 
    const struct pmBoundMotor *pmBoundWheel, const struct pmBoundMotor *pmBoundGun)
 {
-  if ( cmdStream[1] ) {
-    if ( cmdStream[1] == 8 ) {  // R1ボタン
-      pmGun->iServo += pmBoundGun->incS;
-      pmGun->iServo = min(pmBoundGun->maxS,pmGun->iServo);
-    } else if ( cmdStream[1] == 16 ) { // R2ボタン
-      pmGun->iServo -= pmBoundGun->incS;
-      pmGun->iServo = max(pmBoundGun->minS,pmGun->iServo);
-    }
-  } else {
-    switch(cmdStream[2]) {
-      case 1: {	// ↑ボタン
-        pmWheel->iMotor = calcDCMotorValue(pmWheel->iMotor,false,pmBoundWheel);
-        break;
-      }
-      case 2: {	// ↓ボタン
-        pmWheel->iMotor = calcDCMotorValue(pmWheel->iMotor,true,pmBoundWheel);
-        break;
-      }
-      case 4: {	// →ボタン
-        pmWheel->iServo += pmBoundWheel->incS;
-        pmWheel->iServo = min(pmBoundWheel->maxS,pmWheel->iServo);
-        break;
-      }
-      case 8: {	// ←ボタン
-        pmWheel->iServo -= pmBoundWheel->incS;
-        pmWheel->iServo = max(pmBoundWheel->minS,pmWheel->iServo);
-        break;
-      }
-      case 16: {// △ボタン
-        pmGun->iMotor = pmBoundGun->maxM;
-        break;
-      }
-      case 32: {// ×ボタン
-        pmGun->iMotor   = 0;
-        pmWheel->iMotor = 0;
-        break;
-      }
-      case 12: { // Selectボタン
-        pmWheel->iMotor = 0;
-        break;
-      }
-      case 0: {	// アナログスティック
-        /*
-        if ( cmdStream[4] > 63 ) {
-          pmWheel->iMotor = map(cmdStream[4],64,127,80,pmBoundWheel->maxM);
-        } else {
-          pmWheel->iMotor = map(cmdStream[4],0,63,pmBoundWheel->minM,-80);
-        }
-        */
+  if ( cmdStream[1] == 0 ) {
+    if ( cmdStream[2] == 0 ) { // アナログスティック
+        if ( cmdStream[3] == 0x40 && cmdStream[4] == 0x40 
+             && cmdStream[5] == 0x40 && cmdStream[6] == 0x40 ) {
+			// 何も押されていない状態
+            Stat = ksNeutral;
+        } 
         pmWheel->iMotor = map(cmdStream[4],0,127,pmBoundWheel->minM,pmBoundWheel->maxM);
         pmWheel->iServo = map(cmdStream[5],0,127,pmBoundWheel->minS,pmBoundWheel->maxS);
-        break;
-      }
-      default: {// その他
-      }
-    } // end of switch
-  } // end of if
+
+    } else if ( Stat == ksNeutral ) {
+      switch(cmdStream[2]) {
+        case 1: {	// ↑ボタン
+          pmGun->iServo += pmBoundGun->incS;
+          pmGun->iServo = min(pmBoundGun->maxS,pmGun->iServo);
+          Stat = ksUpArrow;
+          break;
+        }
+        case 2: {	// ↓ボタン
+          pmGun->iServo -= pmBoundGun->incS;
+          pmGun->iServo = max(pmBoundGun->minS,pmGun->iServo);
+          Stat = ksDwArrow;
+          break;
+        }
+        case 3: {	// Startボタン
+          Stat = ksNeutral;					// 強制的にニュートラルに戻す
+          pmWheel->iMotor = 0;   			// DCモータの初期値
+          pmWheel->iServo = 90;  			// サーボの初期値
+          pmGun->iMotor = 0;    			// DCモータの初期値
+          pmGun->iServo = pmBoundGun->minS;	// サーボの初期値
+          break;
+        }
+        case 4: {	// →ボタン
+          Stat = ksRgArrow;
+          break;
+        }
+        case 8: {	// ←ボタン
+          Stat = ksLfArrow;
+          break;
+        }
+        case 16: {// △ボタン
+          pmGun->iMotor = pmBoundGun->maxM;
+          Stat = ksTriangle;
+          break;
+        }
+        case 32: {// ×ボタン
+          pmGun->iMotor   = 0;
+          pmWheel->iMotor = 0;
+          Stat = ksCross;
+          break;
+        }
+        case 12: { // Selectボタン
+          break;
+        }
+        default: {// その他
+        }
+      } // end of switch
+    } // end of if cmdStream[2]
+  } // end of if cmdStream[1]
 }
 
 //---------------------------------------------------
@@ -373,6 +301,8 @@ void loop()
   
   // 後輪制御
   pmWheel.iMotor = constrain(pmWheel.iMotor,pmBoundWheel.minM,pmBoundWheel.maxM);
+  if ( abs(pmWheel.iMotor) < pmBoundWheel.ofsM ) 
+    pmWheel.iMotor = 0;
   MotorDrive(pinWheel.dcPin1,pinWheel.dcPin2,pinWheel.pmPin,pmWheel.iMotor);
   
   // 前輪制御
@@ -391,22 +321,14 @@ void loop()
   pmGun.iServo = constrain(pmGun.iServo,pmBoundGun.minS,pmBoundGun.maxS);
   srvGun.write(pmGun.iServo);
 
-  SERIAL_PRINT("                                                      flag = ");
-  SERIAL_PRINT(flagPhotoRef);
-  SERIAL_PRINT("  GunOff = ");
-  SERIAL_PRINT(GunOff);
-  SERIAL_PRINT("   ");
-
-  SERIAL_PRINT("Wheel::");
-  SERIAL_PRINT(pmWheel.iMotor);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINT(pmWheel.iServo);
-  SERIAL_PRINT(" Gun::");
-  SERIAL_PRINT(pmGun.iMotor);
-  SERIAL_PRINT(", ");
-  SERIAL_PRINTLN(pmGun.iServo);
-
+/*
+  char str_log[256];
+  sprintf(str_log,"%d  GunOff = %d   : Wheel:: %d, %d  Gun:: %d, %d",
+          flagPhotoRef, GunOff, 
+          pmWheel.iMotor, pmWheel.iServo, pmGun.iMotor, pmGun.iServo);
+  SERIAL_PRINTLN(str_log);
+*/
   
-  delay(35);
+//  delay(35);
 
 }
