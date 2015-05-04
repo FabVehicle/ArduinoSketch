@@ -31,6 +31,7 @@ struct pmBoundMotor {
   int maxM;  // DCモータパラメータの最大値
   int minS;  // サーボモータパラメータの最小値
   int maxS;  // サーボモータパラメータの最大値
+  int ctrS;  // サーボモータセンター値
 };
 
 const struct pinMotor pinWheel = {10,7,8,6};// 車輪駆動モータピン番号
@@ -41,10 +42,10 @@ struct pmMotor pmWheel;
 struct pmMotor pmGun;
 
 // 車輪用境界パラメータ定義
-const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102};
+const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102,90};
 
 // 砲台用境界パラメータ変数
-const struct pmBoundMotor pmBoundGun   = {100, 0,2,   0,150,92,110};
+const struct pmBoundMotor pmBoundGun   = {100, 0,2,   0,150,92,110,92};
 
 // フォトリフレクタの状態フラグ
 int flagPhotoRef;
@@ -52,8 +53,17 @@ int flagPhotoRef;
 // フォトリフレクタの立上がりエッジ検出フラグ
 volatile bool GunOff;
 
+// コマンドのデリミター
+#define DELIMITER (",;")
+
+// コマンド用のバッファ
+#define READBUFFERSIZE (32)
+char g_szReadBuffer[READBUFFERSIZE] = "";
+int  g_iIndexChar = 0;
+
 KeyStat Stat;
 
+#define _DEBUG_
 #ifdef _DEBUG_
 #define SERIAL_PRINT(...) Serial.print(__VA_ARGS__)
 #define SERIAL_PRINTLN(...) Serial.println(__VA_ARGS__)
@@ -87,7 +97,7 @@ void readPhotoRef()
 //---------------------------------------------------
 void setup()
 {
-  Serial.begin(2400);
+  Serial.begin(9600);
   
   pinMode(pinWheel.servoPin ,OUTPUT);
   pinMode(pinWheel.dcPin1 ,OUTPUT);
@@ -99,11 +109,11 @@ void setup()
   pinMode(pinGun.dcPin2 ,OUTPUT);
   srvGun.attach(pinGun.servoPin);
 
-  pmWheel.iMotor = 0;   		// DCモータの初期値
-  pmWheel.iServo = 90;   		// サーボの初期値
+  pmWheel.iMotor = 0;   				// DCモータの初期値
+  pmWheel.iServo = pmBoundWheel.ctrS;   // サーボの初期値
 
-  pmGun.iMotor = 0;    			// DCモータの初期値
-  pmGun.iServo = pmBoundGun.minS;	// サーボの初期値
+  pmGun.iMotor = 0;    					// DCモータの初期値
+  pmGun.iServo = pmBoundGun.ctrS;		// サーボの初期値
 
   digitalWrite(pinWheel.dcPin1, LOW);
   digitalWrite(pinWheel.dcPin2, LOW);
@@ -169,122 +179,110 @@ void MotorDrive( int iIn1Pin, int iIn2Pin, int iPwmPin, int iMotor )
   }
 }
 #endif
-//---------------------------------------------------
-// PS3コントローラー信号の受信
-//---------------------------------------------------
 
-bool ReadCmd(int* cmd)
+//---------------------------------------------------
+// コマンド取得関数
+//---------------------------------------------------
+boolean readCmdString( char* szReadBuffer, const int ciReadBuffer, int& riIndexChar,
+                       char* szLineString, const int ciLineString)
 {
-  int bf_cmd[8];
-
   while( !Serial.available() );
-  
-  bool readf = false;
-  
-  do {
-    bf_cmd[0] = Serial.read();
-  } while( bf_cmd[0] != 0x80 );
-    
-  unsigned int sum = 0;
-  unsigned int cnt = 1;
-  do {
-    bf_cmd[cnt] = Serial.peek();
-    if ( bf_cmd[cnt] == 0x80 ) {
-      // 電文のスタートコードの場合は処理を終了(エラー状態)
+  while ( true ) {
+    char c = Serial.read();
+
+    if ( -1 == c ) {
       break;
-    }
-
-    bf_cmd[cnt] = Serial.read();
-    if ( bf_cmd[cnt] == -1 ) 
-      continue;
-
-    if ( cnt < 7 )
-      sum += bf_cmd[cnt];
-    cnt ++;
-  } while ( cnt < 8 );
-
-  sum &= 0x7F;
-
-  char str_buf[256];
-  sprintf(str_buf,"CMD: %x, %x, %x, %x, %x, %x, %x, %x, SUM: %x  (cnt=%d)",
-                   bf_cmd[0],bf_cmd[1],bf_cmd[2],bf_cmd[3],
-                   bf_cmd[4],bf_cmd[5],bf_cmd[6],bf_cmd[7], sum, cnt);
-  SERIAL_PRINTLN(str_buf);
-
-  if ( bf_cmd[7] == sum ) {
-    readf = true;
-    for ( int i=0;i<8;i++ ) {
-      cmd[i] = bf_cmd[i];
+    } 
+    if ( ';' == c ) {
+      szReadBuffer[riIndexChar++] = c;
+      szReadBuffer[riIndexChar]   = '\0';
+      strncpy( szLineString, szReadBuffer, ciLineString-1 );
+      szLineString[ciLineString-1] = '\0';
+      riIndexChar = 0;
+      return true;
+    } 
+    else if ( '\n' == c ) {
+      ;
+    } 
+    else {
+      if ( (ciReadBuffer-1) > riIndexChar ) {
+        szReadBuffer[riIndexChar] = c;
+        riIndexChar++;
+      }
     }
   }
-  return readf;
+  return false;
 }
 //---------------------------------------------------
-// PS3コントローラー信号のデコード
+// コマンド解析関数
+// $CMD,コマンド(c|s|l),スロット値,ステアリング値;
+// コマンド：c か s か l の文字
+//           s ⇒  ストップ，c ⇒  モータ値設定，
+//           l ⇒ ヘッドライト状態変更
+// スロット値：-5～5までの整数
+// ステアリング値：-5～5までの整数
 //---------------------------------------------------
-void decodeCmd(
-   int *cmdStream, struct pmMotor *pmWheel, struct pmMotor *pmGun, 
+boolean analizeCommadLine(
+   char* szLineString,
+   struct pmMotor *pmWheel, struct pmMotor *pmGun, 
    const struct pmBoundMotor *pmBoundWheel, const struct pmBoundMotor *pmBoundGun)
-{
-  if ( cmdStream[1] == 0 ) {
-    if ( cmdStream[2] == 0 ) { // アナログスティック
-        if ( cmdStream[3] == 0x40 && cmdStream[4] == 0x40 
-             && cmdStream[5] == 0x40 && cmdStream[6] == 0x40 ) {
-			// 何も押されていない状態
-            Stat = ksNeutral;
-        } 
-        pmWheel->iMotor = map(cmdStream[4],0,127,pmBoundWheel->minM,pmBoundWheel->maxM);
-        pmWheel->iServo = map(cmdStream[5],0,127,pmBoundWheel->minS,pmBoundWheel->maxS);
-
-    } else if ( Stat == ksNeutral ) {
-      switch(cmdStream[2]) {
-        case 1: {	// ↑ボタン
-          pmGun->iServo += pmBoundGun->incS;
-          pmGun->iServo = min(pmBoundGun->maxS,pmGun->iServo);
-          Stat = ksUpArrow;
-          break;
-        }
-        case 2: {	// ↓ボタン
-          pmGun->iServo -= pmBoundGun->incS;
-          pmGun->iServo = max(pmBoundGun->minS,pmGun->iServo);
-          Stat = ksDwArrow;
-          break;
-        }
-        case 3: {	// Startボタン
-          Stat = ksNeutral;					// 強制的にニュートラルに戻す
-          pmWheel->iMotor = 0;   			// DCモータの初期値
-          pmWheel->iServo = 90;  			// サーボの初期値
-          pmGun->iMotor = 0;    			// DCモータの初期値
-          pmGun->iServo = pmBoundGun->minS;	// サーボの初期値
-          break;
-        }
-        case 4: {	// →ボタン
-          Stat = ksRgArrow;
-          break;
-        }
-        case 8: {	// ←ボタン
-          Stat = ksLfArrow;
-          break;
-        }
-        case 16: {// △ボタン
-          pmGun->iMotor = pmBoundGun->maxM;
-          Stat = ksTriangle;
-          break;
-        }
-        case 32: {// ×ボタン
-          pmGun->iMotor   = 0;
-          pmWheel->iMotor = 0;
-          Stat = ksCross;
-          break;
-        }
-        case 12: { // Selectボタン
-          break;
-        }
-        default: {// その他
-        }
-      } // end of switch
-    } // end of if cmdStream[2]
-  } // end of if cmdStream[1]
+{ 
+  SERIAL_PRINTLN(szLineString);
+  
+  if ( 0 != strncmp("$CMD", szLineString, 4 ) ) {
+    return false;
+  }
+  
+  char* ptr = szLineString;
+  ptr = strpbrk( ptr, DELIMITER );
+  if ( NULL == ptr ) return false;
+  *ptr = '\0'; ptr++;
+  
+  char* pszCommand = ptr;
+  ptr = strpbrk( ptr, DELIMITER );
+  if ( NULL == ptr ) return false;
+  *ptr = '\0'; ptr++;
+  
+  char* pszThrottle = ptr;
+  ptr = strpbrk( ptr, DELIMITER );
+  if ( NULL == ptr ) return false;
+  *ptr = '\0'; ptr++;
+  
+  char* pszSteering = ptr;
+  ptr = strpbrk( ptr, DELIMITER );
+  if ( NULL == ptr ) return false;
+  *ptr = '\0'; ptr++;
+  
+  char* pszGunDig = ptr;
+  ptr = strpbrk( ptr, DELIMITER );
+  if ( NULL == ptr ) return false;
+  *ptr = '\0'; ptr++;
+  
+  if ( ! strcmp(pszCommand,"S") ) {
+    pmWheel->iMotor = 0;
+    pmWheel->iServo = pmBoundWheel->ctrS;
+  } else if ( ! strcmp(pszCommand,"C" ) ){
+    if ( strlen(pszThrottle) != 0 ) {  // スロット値が含まれている場合
+      int nThrottle = -atoi(pszThrottle);
+      if ( nThrottle == 0 ) {
+        pmWheel->iMotor = 0;
+      } else if ( nThrottle > 0 ) {
+        pmWheel->iMotor = pmBoundWheel->incM * (nThrottle-1) + pmBoundWheel->ofsM;
+      } else {
+      	pmWheel->iMotor = pmBoundWheel->incM * (nThrottle+1) - pmBoundWheel->ofsM;
+      }
+    }
+    if ( strlen(pszSteering) != 0 ) {  // ステアリング値が含まれている場合
+      pmWheel->iServo = pmBoundWheel->ctrS + ( pmBoundWheel->incS * atoi(pszSteering) );
+    }
+    if ( strlen(pszGunDig) != 0 ) {
+      pmGun->iServo = pmBoundGun->ctrS + ( pmBoundGun->incS * atoi(pszGunDig) );
+    }
+  } else if ( ! strcmp(pszCommand,"L" ) ) {
+	pmGun->iMotor = pmBoundGun->maxM;
+  }
+  
+  return true;
 }
 
 //---------------------------------------------------
@@ -292,11 +290,12 @@ void decodeCmd(
 //---------------------------------------------------
 void loop()
 {
-  int cmdStream[8];
-
-  if ( ReadCmd(cmdStream) ) {				// PS3コントローラーから信号受信
-    // PS3コントローラーから信号デコード
-    decodeCmd(cmdStream,&pmWheel,&pmGun,&pmBoundWheel,&pmBoundGun);
+  char szLineString[READBUFFERSIZE];
+  if ( ! readCmdString(g_szReadBuffer, READBUFFERSIZE, g_iIndexChar, szLineString,  READBUFFERSIZE) ) {
+    return ;
+  }
+  if ( ! analizeCommadLine(szLineString, &pmWheel,&pmGun,&pmBoundWheel,&pmBoundGun) )  {
+    return;
   }
   
   // 後輪制御
@@ -321,13 +320,12 @@ void loop()
   pmGun.iServo = constrain(pmGun.iServo,pmBoundGun.minS,pmBoundGun.maxS);
   srvGun.write(pmGun.iServo);
 
-/*
   char str_log[256];
   sprintf(str_log,"%d  GunOff = %d   : Wheel:: %d, %d  Gun:: %d, %d",
           flagPhotoRef, GunOff, 
           pmWheel.iMotor, pmWheel.iServo, pmGun.iMotor, pmGun.iServo);
   SERIAL_PRINTLN(str_log);
-*/
+
   
 //  delay(35);
 
