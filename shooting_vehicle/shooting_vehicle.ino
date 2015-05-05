@@ -1,7 +1,6 @@
 #include <MsTimer2.h>
 #include <SoftwareSerial.h>
 #include <Servo.h>
-#include "enum_stat.h"
 
 Servo srvWheel;
 Servo srvGun;
@@ -60,8 +59,6 @@ volatile bool GunOff;
 #define READBUFFERSIZE (32)
 char g_szReadBuffer[READBUFFERSIZE] = "";
 int  g_iIndexChar = 0;
-
-KeyStat Stat;
 
 #define _DEBUG_
 #ifdef _DEBUG_
@@ -131,7 +128,6 @@ void setup()
   MsTimer2::set(25,readPhotoRef);
   MsTimer2::start();
 
-  Stat = ksNeutral;
   SERIAL_PRINTLN("done setup");
 }
 
