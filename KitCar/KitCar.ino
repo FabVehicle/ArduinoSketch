@@ -1,6 +1,8 @@
+#include <DCMotor.h>
 #include <Servo.h>
 
 Servo myservo;
+DCMotor mydc;
 
 // ピン番号
 const int servoPin = 9;
@@ -31,66 +33,23 @@ int change;
 void setup()
 {
   Serial.begin(9600);
-  pinMode(dcPin1 ,OUTPUT);
-  pinMode(dcPin2 ,OUTPUT);
   myservo.attach(servoPin);
+  mydc.attach(dcPin1,dcPin2,pmPin,minM,maxM);
   
   diS    = 1;
   iMotor = maxM;    // DCモータの初期値
   iServo = 90;      // サーボの初期値
   change = 500;
 }
-
-//---------------------------------------------------
-// DCモータ駆動関数
-//---------------------------------------------------
-void MotorDrive( int iIn1Pin, int iIn2Pin, int iMotor )
-{
-  if( iMotor == 0 ) { // 
-    digitalWrite(iIn1Pin, LOW);
-    digitalWrite(iIn2Pin, LOW);
-  } 
-  else if( 0 < iMotor ) {
-    digitalWrite(iIn1Pin, LOW);
-    digitalWrite(iIn2Pin, HIGH);
-    analogWrite(pmPin,iMotor);
-  } 
-  else {
-    digitalWrite(iIn1Pin, LOW);
-    digitalWrite(iIn2Pin, HIGH);
-    analogWrite(pmPin,-iMotor);
-  }
-}
-
-
-//---------------------------------------------------
-// クリッピング関数
-//---------------------------------------------------
-int Clip( int vmin, int vmax, int value )
-{
-  int vclip = value;
-
-  if ( vmin > vclip ) {
-    vclip = vmin;
-  }
-  else if ( vmax < vclip ) {
-    vclip = vmax;
-  }
-
-  return vclip;
-}
-
 //---------------------------------------------------
 // メインループ関数
 //---------------------------------------------------
 void loop()
 {  
-  
-  iMotor = Clip(minM,maxM,iMotor);
-//  iMotor = constrain(iMotor,minM,maxM);
-  MotorDrive(dcPin1,dcPin2,iMotor);
+
+  mydc.write(iMotor);
     
-  iServo = Clip(minS,maxS,iServo);
+  iServo = constrain(iServo,minS,maxS);
   myservo.write(iServo);
   
   if ( iServo == 90 ) {
