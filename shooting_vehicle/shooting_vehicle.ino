@@ -5,7 +5,8 @@
 Servo srvWheel;
 Servo srvGun;
 
-// #define _DEBUG_
+//#define _DEBUG_
+#define BACKLASH (10)
 
 // モータピン定義用構造体
 struct pinMotor {
@@ -41,7 +42,7 @@ struct pmMotor pmWheel;
 struct pmMotor pmGun;
 
 // 車輪用境界パラメータ定義
-const struct pmBoundMotor pmBoundWheel = {100,10,2,-150,150,78,102,90};
+const struct pmBoundMotor pmBoundWheel = { 80,10,2,-150,150,78,102,90};
 
 // 砲台用境界パラメータ変数
 const struct pmBoundMotor pmBoundGun   = {100, 0,2,   0,150,92,110,92};
@@ -259,13 +260,13 @@ boolean analizeCommadLine(
     pmWheel->iServo = pmBoundWheel->ctrS;
   } else if ( ! strcmp(pszCommand,"C" ) ){
     if ( strlen(pszThrottle) != 0 ) {  // スロット値が含まれている場合
-      int nThrottle = -atoi(pszThrottle);
-      if ( nThrottle == 0 ) {
+      int nThrottle =(int)(255*atof(pszThrottle));
+      if ( abs(nThrottle) < BACKLASH ) {
         pmWheel->iMotor = 0;
       } else if ( nThrottle > 0 ) {
-        pmWheel->iMotor = pmBoundWheel->incM * (nThrottle-1) + pmBoundWheel->ofsM;
+        pmWheel->iMotor = map(nThrottle,BACKLASH,255,pmBoundWheel->ofsM,pmBoundWheel->maxM);
       } else {
-      	pmWheel->iMotor = pmBoundWheel->incM * (nThrottle+1) - pmBoundWheel->ofsM;
+      	pmWheel->iMotor = map(nThrottle,-255,-BACKLASH,pmBoundWheel->minM,-1*pmBoundWheel->ofsM);
       }
     }
     if ( strlen(pszSteering) != 0 ) {  // ステアリング値が含まれている場合
