@@ -19,7 +19,7 @@ int iServo;        // サーボーモータのパラメータ(角度)
 int diS;
 
 // モータ用パラメータ定数
-const int incS =  12;     // 操作一回当りのサーボモータパラメータ変化量
+const int incS =  6;     // 操作一回当りのサーボモータパラメータ変化量
 const int minM = -100;   // DCモータパラメータの最小値
 const int maxM = 150;    // DCモータパラメータの最大値
 const int minS =  78;    // サーボモータパラメータの最小値
@@ -53,18 +53,19 @@ void loop()
   myservo.write(iServo);
   
   if ( iServo == 90 ) {
-    change = 500;
-  } else {
     change = 2000;
-  }
+  } else {
+    change = 1000;
+  }  
+  delay ( change );
   
   iServo += (incS * diS);
   if ( maxS < iServo ) {
-    iServo -= incS;
+    iServo -= 2*incS;
     diS *= -1;
   } else if ( minS > iServo ) {
-    iServo += incS;
+    iServo += 2*incS;
     diS *= -1;
   }
-  delay ( change );
+  
 }
